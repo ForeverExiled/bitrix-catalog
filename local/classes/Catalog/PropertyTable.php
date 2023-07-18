@@ -31,32 +31,8 @@ class PropertyTable extends \Bitrix\Iblock\PropertyTable
     public static function withFromCategory(Query $query, string $category)
     {
         if (mb_strlen($category) > 0 && $category !== 'all') {
-            $query->registerRuntimeField(
-                'CML2_LINK',
-                new ReferenceField(
-                    'CML2_LINK',
-                    ElementPropertyTable::class,
-                    [
-                        'this.ID' => 'ref.IBLOCK_ELEMENT_ID',
-                        'ref.IBLOCK_PROPERTY_ID' => new SqlExpression('?', Constants::IB_PROP_OFFERS_CML2_LINK),
-                    ]
-                )
-            );
-            $query->registerRuntimeField(
-                'SKU',
-                new ReferenceField(
-                    'SKU',
-                    ElementTable::class,
-                    [
-                        'this.CML2_LINK.VALUE' => 'ref.ID',
-                    ]
-                )
-            );
-
             $query->addFilter(null, [
-                'LOGIC' => 'OR',
                 'ELEMENT.IBLOCK_SECTION.CODE' => $category,
-                'SKU.IBLOCK_SECTION.CODE' => $category
             ]);
         }
     }

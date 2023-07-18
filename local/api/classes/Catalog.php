@@ -3,10 +3,13 @@
 namespace Legacy\API;
 
 use Bitrix\Main\Loader;
-use Bitrix\Iblock\ElementTable;
+use Bitrix\Iblock\PropertyTable;
 use Bitrix\Iblock\SectionTable;
+use Bitrix\Iblock\ElementPropertyTable;
 use Legacy\Catalog\CatalogTable;
 use Legacy\Catalog\FilterTable;
+use Legacy\Catalog\ProductElementTable;
+use Legacy\General\CaseChangerHelper;
 use Legacy\General\Constants;
 
 class Catalog
@@ -15,68 +18,13 @@ class Catalog
     private static function processData($query)
     {
         $result = [];
-
-        $properties = Properties::get(['iblock_id' => Constants::IB_GOODS, 'is_smart_filter' => true]);
+        
         $db = $query->exec();
-        while ($arr = $db->fetch()) {
-            $arr['OFFER_PRICE'] = array_map(function ($a) {
-                $tmp = explode(':', $a);
-                return [
-                    'ID' => $tmp[0],
-                    'PRICE' => $tmp[1],
-                ];
-            }, explode(',', $arr['OFFER_PRICE']));
-            foreach ($arr['OFFER_PRICE'] as $val) {
-                if ($val['PRICE'] == $arr['MIN_PRICE']) {
-                    $arr['OFFER_ID'] = $val['ID'];
-                }
-            }
-            unset($arr['OFFER_PRICE']);
- 
-            $pkey = 'PROPERTY_'.$properties['SIZE']['ID'].'_VALUE';
-            if ($arr[$pkey]) {
-                $arr['OFFERS'] = array_map(function ($a) use ($properties) {
-                    $tmp = explode(':', $a);
-                    return [
-                        'ID' => $tmp[0],
-                        'SIZE' => [
-                            'ALIAS' => $properties['SIZE']['VALUES'][$tmp[1]]['alias'],
-                            'CODE' => $tmp[1],
-                        ],
-                    ];
-                }, explode(',', $arr[$pkey]));
-            }
+        // while($arr = $db->fetch()){
+        //     $arr
+        // }
 
-            $result[$arr['OFFER_ID']]= [
-                'ID' => $arr['OFFER_ID'],
-                'MIN_PRICE' => $arr['MIN_PRICE'],
-                'MAX_PRICE' => $arr['MAX_PRICE'],
-                'OFFERS' => $arr['OFFERS'],
-            ];
-        }
-
-        $db = ElementTable::getList([
-            'select' => [
-                'ID',
-                'NAME',
-                'PREVIEW_PICTURE',
-            ],
-            'filter' => [
-                'ID' => array_keys($result),
-            ],
-        ]);
-        while ($arr = $db->fetch()) {
-            foreach ($result as $key => $item) {
-                if ($arr['ID'] == $item['ID']) {
-                    $result[$key]['NAME'] = mb_strlen(trim($arr['NAME'])) > 35 ? mb_substr(trim($arr['NAME']), 0, 33).'…' : trim($arr['NAME']);
-                    // $result[$key]['PREVIEW_PICTURE'] = getFilePath($arr['PREVIEW_PICTURE']);
-                    // $result[$key]['DETAIL_PICTURE'] = getFilePath($arr['DETAIL_PICTURE']);
-                    break;
-                }
-            }
-        }
-
-        return array_values($result);
+        return CaseChangerHelper::array_change_key_case_recursive($db->fetchAll());
     }
 
     public static function getCategories()
@@ -97,13 +45,13 @@ class Catalog
                     'CODE',
                 ],
                 'filter' => [
-                    'IBLOCK_ID' => Constants::IB_GOODS,
+                    'IBLOCK_ID' => Constants::IB_CLOTHES,
                     'ACTIVE' => true,
                 ],
             ]);
 
             while ($res = $db->fetch()) {
-                $result []= [
+                $result[] = [
                     'id' => $res['ID'],
                     'name' => $res['NAME'],
                     'code' => $res['CODE'],
@@ -114,7 +62,7 @@ class Catalog
         return $result;
     }
 
-    public static function getFilter($arRequest)
+    public static function getFilter($arRequest, $properties)
     {
         $result = [
             'categories' => [
@@ -124,9 +72,7 @@ class Catalog
         ];
 
         if (Loader::includeModule('iblock') && Loader::includeModule('catalog')) {
-            $properties = Properties::get(['iblock_id' => Constants::IB_GOODS]);
             $category = $arRequest['category'] ?? '';
-            
             $filter = $arRequest['filter'] ?? [];
             if (count($filter) == 1) {
                 foreach ($properties as $pcode => $property) {
@@ -185,30 +131,33 @@ class Catalog
             $id = $arRequest['id'] ?? [];
             $page = (int) $arRequest['page'];
             $category = $arRequest['category'] ?? '';
-            $filter = self::getFilter($arRequest);
+            $filter = $arRequest['filter'] ?? [];
+            $limit = (int) $arRequest['limit'];
 
-            $q = CatalogTable::query()
+            $properties = PropertyTable::getList([
+                'select' => [
+                    'ID',
+                    'CODE',
+                    'NAME',
+                    'PROPERTY_TYPE',
+                    'MULTIPLE',
+                    'USER_TYPE'
+                ],
+                'filter' => [
+                    'IBLOCK_ID' => Constants::IB_CLOTHES,
+                    'ACTIVE' => 'Y'
+                    ]
+            ])->fetchAll();
+            $q = ProductElementTable::query()
             ->withDefault()
             ->withID($id)
+            ->withCatalog()
             ->withFromCategory($category)
             ->withFilter($arRequest['filter'] ?? [])
             ->withPage($page)
-            ->withExclude($arRequest['exclude'] ?? []);
-
-            switch ($arRequest['sortby']) {
-                case 'new':
-                    $q->withOrderBy('MAX_DATE_CREATE', 'desc');
-                    break;
-                case 'popular':
-                    $q->withOrderBy('MAX_SHOW_COUNTER', 'desc');
-                    break;
-                case 'cheap':
-                    $q->withOrderBy('MIN_PRICE', CatalogTable::ASCENDING);
-                    break;
-                case 'expensive':
-                    $q->withOrderBy('MIN_PRICE', CatalogTable::DESCENDING);
-                    break;
-            }
+            ->withLimit($limit)
+            ->withExclude($arRequest['exclude'] ?? [])
+            ->withProperties($properties);
 
             $result['items'] = self::processData($q);
             $result['count'] = $q->queryCountTotal();
