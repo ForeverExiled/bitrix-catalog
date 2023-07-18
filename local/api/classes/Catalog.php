@@ -17,14 +17,10 @@ class Catalog
 
     private static function processData($query)
     {
-        $result = [];
-        
         $db = $query->exec();
-        // while($arr = $db->fetch()){
-        //     $arr
-        // }
+        $result = $db->fetchAll();
 
-        return CaseChangerHelper::array_change_key_case_recursive($db->fetchAll());
+        return CaseChangerHelper::array_change_key_case_recursive($result);
     }
 
     public static function getCategories()
